@@ -1,6 +1,7 @@
 import contextlib
 import numpy as np
 import weakref
+
 class Variable:
     #ndarrayが前に来たときの演算子を用いた計算でndarrayより優先してメソッドを読んでもらうための設定
     __array_priority__ = 200
@@ -84,7 +85,7 @@ class Variable:
         return self.data.size
     
     @property
-    def shape(self):
+    def dtype(self):
         return self.data.dtype
 
     # PYTHOのlen関数が使えるように拡張
