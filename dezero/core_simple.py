@@ -189,9 +189,18 @@ class Pow(Function):
     def backward(self, gy):
         x = self.inputs[0].data
         c = self.c
-        gx = x * x ** (c - 1) * gy
+        gx = c * x ** (c - 1) * gy
         return gx
 
+class Sin(Function):
+    def forward(self, x):
+        y = np.sin(x)
+        return y
+    
+    def backward(self, gy):
+        x = self.inputs[0].data
+        gx = gy * np.cos(x)
+        return gx
 
 
 def as_array(x):
@@ -254,6 +263,9 @@ def rdiv(x0, x1):
 
 def pow(x,c):
     return Pow(c)(x)
+
+def sin(x):
+    return Sin()(x)
 
 # Variableに対して演算子の設定を行うための関数
 def setup_variable():

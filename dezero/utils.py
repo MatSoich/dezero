@@ -1,7 +1,7 @@
 import os
 import subprocess
 
-
+# Variableインスタンスを与えると、その情報をDot言語で書かれた文字列として返す。
 def _dot_var(v, verbose=False):
     dot_var = '{}[label="{}", color = orange, style=filled]\n'
 
@@ -11,6 +11,20 @@ def _dot_var(v, verbose=False):
             name += ': '
         name += str(v.shape) + ' ' + str(v.dtype)
     return dot_var.format(id(v), name)
+
+
+# dezeroの関数をDot言語に変換。
+def _dot_func(f):
+    dot_func = '{}[label="{}", color=lightblue, style=filled, shape=box]\n'
+    txt = dot_func.format(id(f), f.__class__.__name__)
+
+    dot_edge = '{} -> {}\n'
+    for x in f.inputs:
+        txt += dot_edge.format(id(x),id(f))
+    for y in f.outputs:
+        txt += dot_edge.format(id(f),id(y())) # yはweakref
+    return txt
+
 
 # 基本はbackwardメソッドと同じ
 def get_dot_graph(output, verbose=True):
@@ -25,9 +39,9 @@ def get_dot_graph(output, verbose=True):
             seen_set.add(f)
     add_func(output.creator)
     txt += _dot_var(output, verbose)
-
     while funcs:
-        funcs = funcs.pop(func)
+        func = funcs.pop()
+        txt += _dot_func(func)
         for x in func.inputs:
             txt += _dot_var(x, verbose)
 
@@ -49,6 +63,36 @@ def plot_dot_graph(output, verbose = True, to_file = 'graph.png'):
         f.write(dot_graph)
 
     #②dotコマンドを呼ぶ
-    extension = os.path.splittext(to_file)[1][1:]
+    extension = os.path.splitext(to_file)[1][1:]
     cmd = 'dot {} -T {} -o {}'.format(graph_path, extension, to_file)
     subprocess.run(cmd,shell=True)
+
+
+def reshape_sum_backward(gy, x_shape, axis, keepdims):
+    """\\Reshape gradient appropriately for dezero.functions.sum's backward.
+    Args:
+        gy (dezero.Variable): Gradient variable from the output by backprop.
+        x_shape (tuple): Shape used at sum function's forward.
+        axis (None or int or tuple of ints): Axis used at sum function's
+            forward.
+        keepdims (bool): Keepdims used at sum function's forward.
+    Returns:
+        dezero.Variable: Gradient variable which is reshaped appropriately
+    """
+    ndim = len(x_shape)
+    tupled_axis = axis
+    if axis is None:
+        tupled_axis = None
+    elif not isinstance(axis, tuple):
+        tupled_axis = (axis,)
+
+    if not (ndim == 0 or tupled_axis is None or keepdims):
+        actual_axis = [a if a >= 0 else a + ndim for a in tupled_axis]
+        shape = list(gy.shape)
+        for a in sorted(actual_axis):
+            shape.insert(a, 1)
+    else:
+        shape = gy.shape
+
+    gy = gy.reshape(shape)  # reshape
+    return gy
