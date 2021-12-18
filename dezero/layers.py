@@ -2,7 +2,6 @@ from dezero.core import Parameter
 import weakref
 import numpy as np
 import dezero.functions as F
-from dezero.core import Parameter
 
 
 class Layer:
@@ -12,7 +11,7 @@ class Layer:
     # Layerクラス内でインスタンス変数を設定する際に呼び出される特殊メソッド
     # インスタンス変数の名前がname, インスタンス変数の値がvalueとして引数に渡される。
     def __setattr__(self, name, value):
-        if isinstance(value, Parameter):
+        if isinstance(value, (Parameter, Layer)): #①Layerも追加する。
             self._params.add(name)
         super().__setattr__(name, value)
     
@@ -32,7 +31,12 @@ class Layer:
     def params(self):
         # for + yieldで処理を逐次実行できる。
         for name in self._params:
-            yield self.__dict__[name]
+            obj = self.__dict__[name]
+            if isinstance(obj, Layer):
+                # yield from によって、別のジェネレータから新しいジェネレータを読んでいる。
+                yield from obj.params() #②Layerの場合、再起的にパラメータを取り出す。
+            else:
+                yield obj
     # 全てのParameterの勾配をリセット
     def cleargrads(self):
         for param in self.params():
