@@ -5,6 +5,11 @@ import contextlib
 import numpy as np
 import weakref
 import dezero
+try:
+    import cupy
+    array_types = (np.ndarray, cupy.ndarray)
+except ImportError:
+    array_types = (np.ndarray)
 
 class Variable:
     #ndarrayが前に来たときの演算子を用いた計算でndarrayより優先してメソッドを読んでもらうための設定
@@ -12,7 +17,7 @@ class Variable:
     # 変数に名前をつけれるように改良
     def __init__(self, data, name=None):
         if data is not None:
-            if not isinstance(data, np.ndarray):
+            if not isinstance(data, array_types):
                 raise TypeError('{} is not supported'.format(type(data)))
         
         self.data = data
@@ -33,7 +38,9 @@ class Variable:
         if self.grad is None:
             # self.grad = np.ones_like(self.data)
             # 逆伝播でもつながりを作るために、Variableインスタンスになるように修正
-            self.grad = Variable(np.ones_like(self.data))
+            # GPU対応のための処理
+            xp = dezero.cuda.get_array_module(self.data)
+            self.grad = Variable(xp.ones_like(self.data))
 
         funcs = []
         seen_set = set()
@@ -93,8 +100,7 @@ class Variable:
     def sum(self, axis=None, keepdims=False):
         return dezero.functions.sum(self, axis, keepdims)
 
-    # Variableインスタンスをndarrayのインスタンスのように見せるための実装。(必要に応じて幾つでも設定可能。)
-    
+    # Variableインスタンスをndarrayのインスタンスのように見せるための実装。(必要に応じて幾つでも設定可能。)  
     # インスタンス変数としてアクセスするためのデコレータ
     @property
     def shape(self):
@@ -133,6 +139,15 @@ class Variable:
     #def __mul__(self, other):
     #    return mul(self, other)
 
+    def to_cpu(self):
+        if self.data is not None:
+            self.data = dezero.cuda.as_numpy(self.data)
+    
+    def to_gpu(self):
+        if self.data is not None:
+            self.data = dezero.cuda.as_cupy(self.data)
+
+
 class Parameter(Variable):
     pass
  
@@ -166,6 +181,19 @@ class Function:
 
 class Config:
     enable_backprop = True
+    train = True
+
+@contextlib.contextmanager
+def using_config(name, value):
+    old_value = getattr(Config, name)
+    setattr(Config, name, value)
+    yield
+    setattr(Config, name, old_value)
+
+# with文と一緒に使うことでそのブロックの中だけConfig.trainをFalseにできる
+def test_mode():
+    return using_config('train', False)
+
 
 
 class Add(Function):
@@ -249,10 +277,9 @@ class Pow(Function):
 
 
 
-def as_array(x):
-
+def as_array(x, array_module=np):
     if np.isscalar(x):
-        return np.array(x)
+        return array_module.array(x)
     return x
 
 # ndarrayインスタンスをVaraibleインスタンスに変換
@@ -281,30 +308,30 @@ def no_grad():
     return using_config('enable_backprop', False)
 
 def add(x0, x1):
-    x1 = as_array(x1)
+    x1 = as_array(x1, dezero.cuda.get_array_module(x0.data))
     return Add()(x0, x1)
 
 def mul(x0, x1):
-    x1 = as_array(x1)
+    x1 = as_array(x1, dezero.cuda.get_array_module(x0.data))
     return Mul()(x0, x1) 
 
 def neg(x):
     return Neg()(x)
 
 def sub(x0, x1):
-    x1 = as_array(x1)
+    x1 = as_array(x1, dezero.cuda.get_array_module(x0.data))
     return Sub()(x0, x1)
 
 def rsub(x0, x1):
-    x1 = as_array(x1)
+    x1 = as_array(x1, dezero.cuda.get_array_module(x0.data))
     return Sub()(x1, x0)
 
 def div(x0, x1):
-    x1 = as_array(x1)
+    x1 = as_array(x1, dezero.cuda.get_array_module(x0.data))
     return Div()(x0, x1)
 
 def rdiv(x0, x1):
-    x1 = as_array(x1)
+    x1 = as_array(x1, dezero.cuda.get_array_module(x0.data))
     return Div()(x1, x0)
 
 def pow(x,c):
